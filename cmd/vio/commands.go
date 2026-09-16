@@ -1,13 +1,14 @@
-package vio
+package main
 
 import "github.com/spf13/cobra"
 
 func SpawnAgentCmd() *cobra.Command {
-	cmd := cobra.Command {
-		Use: "vio",
+	cmd := cobra.Command{
+		Use:   "vio",
 		Short: "Start the vio agent in a new terminal session",
-		Run: SpawnAgent
+		Run:   SpawnAgent,
 	}
+	return &cmd
 }
 
 func SpawnAgent(cmd *cobra.Command, args []string) {

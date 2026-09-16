@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"unicode/utf8"
+
 	tea "charm.land/bubbletea/v2"
 )
 
@@ -39,7 +41,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 
 		// handle quit messages.
-		case "ctrl+c", "q":
+		case "ctrl+c":
 			return m, tea.Quit
 
 		// handle enter key press.
@@ -50,17 +52,21 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// handle backspace key press.
 		case "backspace":
 			if len(m.input) > 0 {
-				m.input = m.input[:len(m.input)-1]
+				_, size := utf8.DecodeLastRuneInString(m.input)
+				m.input = m.input[:len(m.input)-size]
 			}
 
 		default:
-			m.input += msg.String()
+			// only append printable characters; ignore special keys.
+			if text := msg.Key().Text; text != "" {
+				m.input += text
+			}
 		}
 	}
 	return m, nil
 }
 
 // render update to the terminal UI.
-func (m *model) View() string {
-	return "> " + m.input + "\n"
+func (m *model) View() tea.View {
+	return tea.NewView(header + "\n\n> " + m.input + "\n")
 }

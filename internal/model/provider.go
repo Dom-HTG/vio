@@ -6,19 +6,35 @@ import (
 	"vio/internal/domain"
 )
 
-// Provider is implemented by every model backend. It is the port the agent
-// talks to; concrete transports (OpenAI-compatible HTTP, fakes) live behind it.
 type Provider interface {
-	Chat(ctx context.Context, request Request) (Response, error)
+	Generate(ctx context.Context, msgs []domain.Message, tools []domain.ToolDefinition) (*Response, error)
+	Stream(ctx context.Context, msgs []domain.Message, tools []domain.ToolDefinition) (<-chan StreamEvent, error)
 }
 
-type Request struct {
-	Model    string
-	Messages []domain.Message
+// StreamEventType is implemented for the provider-specific events.
+type StreamEventType string
+
+const (
+	StreamToken    StreamEventType = "token"           // Text carries a text delta
+	StreamToolCall StreamEventType = "tool_call_delta" // ToolCall carries a partial call
+	StreamDone     StreamEventType = "done"            // completion
+	StreamError    StreamEventType = "error"           // Error carries the failure
+)
+
+type StreamEvent struct {
+	Type     StreamEventType
+	Text     string
+	ToolCall *domain.ToolCall
+	Error    error
 }
+
+// type Request struct {
+// 	Model    string
+// 	Messages []domain.Message
+// }
 
 type Response struct {
 	Message       domain.Message
-	ToolCalls     []domain.ToolCall // tool calls the model requested, if any
+	ToolCalls     []domain.ToolCall
 	UsageMetadata any
 }

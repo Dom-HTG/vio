@@ -17,9 +17,10 @@ Issue 3 proposes:
 
 ```text
 internal/model/
-├── provider.go   Provider port + Request/Response
-├── openai.go     OpenAI-compatible HTTP provider
-├── config.go     provider configuration from env
+├── provider.go   Provider port + StreamEvent + Response
+├── openai.go     generic OpenAI-compatible HTTP provider
+├── deepseek.go   DeepSeek preset
+├── config.go     ModelConfig + env loading
 └── errors.go     typed provider errors
 ```
 
@@ -72,47 +73,39 @@ type Request struct {
 type Response struct {
     Message       domain.Message
     ToolCalls     []domain.ToolCall // tool calls the model requested, if any
-    UsageMetadata any
+    FinishReason  string            // e.g. "stop" | "tool_calls"
+    UsageMetadata any               // model.Usage where available
 }
 ```
 
 ## Provider Interface
 
-Non-streaming entry (Issue 2/3). The scaffold's concrete port is a single
-request/response call:
-
-```go
-type Provider interface {
-    Chat(ctx context.Context, request Request) (Response, error)
-}
-```
-
-The roadmap's more granular shape passes messages and tool definitions
-explicitly:
+The port is a generate/stream pair over the shared domain types:
 
 ```go
 type Provider interface {
     Generate(ctx context.Context, msgs []domain.Message, tools []domain.ToolDefinition) (*Response, error)
+    Stream(ctx context.Context, msgs []domain.Message, tools []domain.ToolDefinition) (<-chan StreamEvent, error)
 }
 ```
 
-Streaming entry (Issue 7): the agent should receive deltas and completion
-signals over a channel. Ownership: the provider creates and closes the stream
-channel.
+`Generate` is the synchronous, one-shot call. `Stream` returns immediately with
+a channel of incremental deltas; the provider creates and closes the channel,
+and the agent consumes it.
 
 ```go
-type StreamEvent struct {
-    Type       StreamEventType  // token | tool_call_delta | done | error
-    Text       string           // for token
-    ToolCall   *domain.ToolCall // accumulating tool-call deltas
-    Error      error
-}
+type StreamEventType string // token | tool_call_delta | done | error
 
-type Provider interface {
-    Generate(ctx, msgs, tools) (*Response, error)
-    Stream(ctx, msgs, tools) (<-chan StreamEvent, error)
+type StreamEvent struct {
+    Type     StreamEventType  // which field is meaningful
+    Text     string           // for token
+    ToolCall *domain.ToolCall // complete call, after accumulating deltas
+    Error    error            // in-band terminal error
 }
 ```
+
+`StreamEventType` is provider-local: the agent translates stream events into the
+TUI-facing `app.Event` types, so `internal/model` never imports `internal/app`.
 
 Streaming must support text deltas, tool-call deltas where the provider supports
 them, completion, and errors.
@@ -138,15 +131,45 @@ It must **not**:
 
 ## OpenAI-Compatible HTTP Provider (`openai.go`)
 
+`OpenAICompat` implements `Provider` for any `/chat/completions` API. It is
+transport only; provider-specific defaults live in small presets.
+
 - Use Go's standard `net/http` client (no SDK dependency) — keeps deps minimal
   and works with any OpenAI-compatible server.
 - Requests respect `ctx` so cancellation propagates to the HTTP request.
 - Parse chat-completions-style responses, including `tool_calls` in assistant
   messages and `tool` role messages carrying results.
+- Extensible via `ModelConfig`: `ChatPath` (default `/chat/completions`),
+  `Headers` (e.g. Azure's `api-key`), and `Params` (temperature, max_tokens,
+  tool_choice, ...). Auth is `Authorization: Bearer <APIKey>` unless the caller
+  supplies their own `Authorization` header; an empty `APIKey` is allowed for
+  keyless local endpoints.
+
+Presets are thin constructors over the generic transport:
+
+```go
+func NewOpenAICompat(cfg ModelConfig) (*OpenAICompat, error) // explicit config
+func NewDeepSeek(cfg ModelConfig) (*OpenAICompat, error)     // fills DeepSeek defaults
+```
 
 ## Configuration (`config.go`)
 
-Provider configuration comes from environment variables (Issue 3, 10):
+`ModelConfig` carries the transport settings:
+
+```go
+type ModelConfig struct {
+    BaseURL    string
+    APIKey     string
+    Model      string
+    ChatPath   string            // default "/chat/completions"
+    Headers    map[string]string // extra/override headers
+    Params     map[string]any    // extra request-body fields
+    HTTPClient *http.Client      // injectable for tests
+}
+```
+
+`ConfigFromEnv` populates `BaseURL`, `APIKey`, and `Model` from the environment
+(Issue 3, 10):
 
 ```text
 MODEL_BASE_URL    endpoint base URL
@@ -165,6 +188,7 @@ Create meaningful, typed errors for (Issue 3, 10):
 - Timeouts.
 - Invalid / malformed responses.
 - Malformed tool calls in the response.
+- Invalid configuration (`ErrConfig`).
 - Context cancellation (`context.Canceled` passthrough).
 
 Errors are exported so `internal/agent` can decide whether a failure is

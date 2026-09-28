@@ -36,5 +36,12 @@ type StreamEvent struct {
 type Response struct {
 	Message       domain.Message
 	ToolCalls     []domain.ToolCall
+	FinishReason  string
 	UsageMetadata any
+}
+
+type Usage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
 }

@@ -1,40 +1,24 @@
 package model
 
-import "context"
+import (
+	"context"
 
-// every model implements the provider interface.
+	"vio/internal/domain"
+)
+
+// Provider is implemented by every model backend. It is the port the agent
+// talks to; concrete transports (OpenAI-compatible HTTP, fakes) live behind it.
 type Provider interface {
 	Chat(ctx context.Context, request Request) (Response, error)
 }
 
-type Role string
-
-const (
-	RoleSystem    Role = "system"
-	RoleUser      Role = "user"
-	RoleAssistant Role = "assistant"
-	RoleTool      Role = "tool"
-)
-
-type Message struct {
-	Role       Role
-	Content    string
-	ToolCalls  []ToolCall
-	ToolCallID string
-}
-
-type ToolCall struct {
-	Name string
-	Args map[string]any
-}
-
 type Request struct {
 	Model    string
-	Messages []Message
+	Messages []domain.Message
 }
 
 type Response struct {
-	Message       Message
-	ToolCall      *ToolCall // optional tool call request from the model
+	Message       domain.Message
+	ToolCalls     []domain.ToolCall // tool calls the model requested, if any
 	UsageMetadata any
 }

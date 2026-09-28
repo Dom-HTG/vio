@@ -46,9 +46,12 @@ func NewAgent(config AgentConfig) *Agent {
 func (a *Agent) Run(prompt string, ctx context.Context) <-chan app.Event {
 	events := make(chan app.Event)
 	go func() {
-		defer close(events) // agent creates and closes the channel — no one else may
-		// emit AgentStarted, loop (ModelStarted/ModelOutput/ToolStarted/...), then
-		// AgentFinished or Error
+		defer close(events) // agent creates and closes the channel
+		//append prompt to the session conversation
+		//build context for the model
+		//call provider.Chat with the context and prompt
+		//execute any tool calls if needed via the tools registry
+		//append the results, repeat until done or max iterations reached
 	}()
 	return events
 }

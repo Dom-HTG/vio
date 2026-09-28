@@ -76,12 +76,14 @@ type Registry struct {
 
 func (r *Registry) Register(tool Tool) error      // error on duplicate name
 func (r *Registry) Get(name string) (Tool, bool)
-func (r *Registry) Definitions() []ToolDefinition // for the provider
+func (r *Registry) Definitions() []domain.ToolDefinition // for the provider
 func (r *Registry) Names() []string
 ```
 
 The registry is the single source of tool definitions handed to the provider and
-the allow/deny gate for tool execution.
+the allow/deny gate for tool execution. `ToolDefinition` is the data-only shape
+from `internal/domain`; `tools` imports `domain` and never the model/provider
+package.
 
 ## Built-in Tools
 

@@ -44,7 +44,8 @@ vio/
 │   └── cli.go               flag parsing and configuration
 ├── internal/
 │   ├── agent/               runtime: core loop, lifecycle, events
-│   ├── model/               provider abstraction + HTTP provider   (to be added)
+│   ├── domain/              provider-independent core types
+│   ├── model/               provider abstraction + HTTP provider
 │   ├── state/               session / conversation / history
 │   ├── tools/               tool contract, registry, built-in tools
 │   ├── tui/                 Bubble Tea application (views + input)
@@ -90,6 +91,9 @@ used.
                     └──────────────────┘
 ```
 
+The provider-independent `internal/domain` types sit beneath `agent`, `model`,
+`tools`, and `state`; each depends on `domain` rather than on one another.
+
 Data flow for one user turn:
 
 1. The user submits a task through the TUI.
@@ -108,10 +112,11 @@ Data flow for one user turn:
 | --- | --- | --- |
 | `cmd/agent` | Parse flags/env, build config, construct dependencies, start TUI | all `internal/*` |
 | `internal/tui` | Render conversation, capture input, display agent state; never executes tools/models/FS directly | `internal/agent` (events only) |
-| `internal/agent` | Agent lifecycle, core loop, event emission, cancellation, context building | `internal/model`, `internal/tools`, `internal/state`, `internal/workspace` |
-| `internal/model` | Provider abstraction, message translation, HTTP transport | stdlib only |
-| `internal/tools` | Tool contract + registry + built-ins | `internal/workspace` |
-| `internal/state` | Session, conversation, history in-memory + persistence | stdlib only |
+| `internal/agent` | Agent lifecycle, core loop, event emission, cancellation, context building | `internal/domain`, `internal/model`, `internal/tools`, `internal/state`, `internal/workspace` |
+| `internal/domain` | Provider-independent core types: messages, roles, tool calls, tool definitions | stdlib only |
+| `internal/model` | Provider abstraction, message translation, HTTP transport | `internal/domain` |
+| `internal/tools` | Tool contract + registry + built-ins | `internal/domain`, `internal/workspace` |
+| `internal/state` | Session, conversation, history in-memory + persistence | `internal/domain` |
 | `internal/workspace` | Path-safe repo FS, listing, search | stdlib only |
 
 Hard rules:
@@ -119,11 +124,14 @@ Hard rules:
 - `internal/tui` must never import `internal/model`, `internal/tools`,
   `internal/workspace`, Bubble Tea SDKs' agent logic, or any provider SDK. It
   communicates with the runtime exclusively through typed agent-events.
-- `internal/model`, `internal/tools`, `internal/state`, and
+- `internal/domain`, `internal/model`, `internal/tools`, `internal/state`, and
   `internal/workspace` must never import Bubble Tea or any provider SDK.
 - `internal/agent` must have no Bubble Tea dependency.
-- The domain types (messages, roles, tool calls, events) live in `internal/agent`
-  and `internal/model` and must not be coupled to a specific vendor SDK.
+- `internal/domain` must not import any other internal package; it is the
+  innermost layer.
+- The domain types (messages, roles, tool calls, tool definitions) live in
+  `internal/domain` and must not be coupled to a specific vendor SDK. Event types
+  live in `internal/app` (and `internal/agent`).
 - All filesystem access performed by tools goes through `internal/workspace`.
 - All shell execution happens through the `shell` tool, rooted at the workspace.
 
@@ -164,6 +172,9 @@ names that differ from some issue proposals. Decisions:
 - Provider layer (`internal/model`) and an agent worker/runtime split
   (`internal/runtime`) referenced in issues are folded into `internal/model`
   (new, see 02-model-provider.md) and `internal/agent` (existing `runtime.go`).
+- Provider-independent message/tool types were extracted out of `internal/model`
+  into `internal/domain`, so `state` and `tools` depend on the neutral core
+  instead of the provider adapter (see 02-model-provider.md).
 - `internal/tui` will grow `tool_view.go` and `status.go` (see 06-tui.md).
 - `internal/workspace` will grow `errors.go`.
 

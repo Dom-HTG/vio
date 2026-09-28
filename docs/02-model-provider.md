@@ -1,8 +1,8 @@
 # 02 — Model Provider Layer (`internal/model`)
 
-> The BYO-model abstraction (Issues 2, 3, 7). **Note:** this package does not
-> exist in the current scaffold and must be created. All other packages already
-> reference its types conceptually via the runtime.
+> The BYO-model abstraction (Issues 2, 3, 7). The provider-independent message
+> and tool types now live in `internal/domain`; this package defines the provider
+> port and the OpenAI-compatible transport that implements it.
 
 ## Purpose
 
@@ -17,7 +17,7 @@ Issue 3 proposes:
 
 ```text
 internal/model/
-├── model.go      domain types + Provider interface
+├── provider.go   Provider port + Request/Response
 ├── openai.go     OpenAI-compatible HTTP provider
 ├── config.go     provider configuration from env
 └── errors.go     typed provider errors
@@ -25,10 +25,12 @@ internal/model/
 
 ## Domain Types
 
-Provider-independent message types (shared with the agent loop; never coupled to
-a vendor SDK):
+The provider-independent message and tool types live in `internal/domain` and are
+shared by `agent`, `model`, `state`, and `tools`. They are never coupled to a
+vendor SDK:
 
 ```go
+// internal/domain
 type Role string
 
 const (
@@ -44,43 +46,53 @@ type Message struct {
     ToolCalls  []ToolCall
     ToolCallID string
 }
-```
 
-Tool definition sent to the model and tool call parsed back out:
+type ToolCall struct {
+    ID   string
+    Name string
+    Args map[string]any
+}
 
-```go
 type ToolDefinition struct {
     Name        string
     Description string
-    Parameters  map[string]any // JSON Schema
+    Params      map[string]any // JSON Schema
 }
+```
 
-type ToolCall struct {
-    ID        string
-    Name      string
-    Arguments map[string]any
+`internal/model` wraps those types at its boundary:
+
+```go
+// internal/model
+type Request struct {
+    Model    string
+    Messages []domain.Message
 }
 
 type Response struct {
-    Text        string
-    ToolCalls   []ToolCall
-    FinishReason string   // e.g. "stop" | "tool_calls"
-    Usage       Usage      // where available
-}
-
-type Usage struct {
-    InputTokens  int
-    OutputTokens int
+    Message       domain.Message
+    ToolCalls     []domain.ToolCall // tool calls the model requested, if any
+    UsageMetadata any
 }
 ```
 
 ## Provider Interface
 
-Non-streaming entry (Issue 2/3):
+Non-streaming entry (Issue 2/3). The scaffold's concrete port is a single
+request/response call:
 
 ```go
 type Provider interface {
-    Generate(ctx context.Context, msgs []Message, tools []ToolDefinition) (*Response, error)
+    Chat(ctx context.Context, request Request) (Response, error)
+}
+```
+
+The roadmap's more granular shape passes messages and tool definitions
+explicitly:
+
+```go
+type Provider interface {
+    Generate(ctx context.Context, msgs []domain.Message, tools []domain.ToolDefinition) (*Response, error)
 }
 ```
 
@@ -90,9 +102,9 @@ channel.
 
 ```go
 type StreamEvent struct {
-    Type       StreamEventType // token | tool_call_delta | done | error
-    Text       string          // for token
-    ToolCall   *ToolCall       // accumulating tool-call deltas
+    Type       StreamEventType  // token | tool_call_delta | done | error
+    Text       string           // for token
+    ToolCall   *domain.ToolCall // accumulating tool-call deltas
     Error      error
 }
 
@@ -110,10 +122,10 @@ them, completion, and errors.
 The provider is responsible for:
 
 1. Constructing API requests.
-2. Translating internal `Message` types to the wire format.
-3. Translating tool definitions to the wire format.
+2. Translating `domain.Message` types to the wire format.
+3. Translating `domain.ToolDefinition` values to the wire format.
 4. Parsing model responses.
-5. Translating tool calls into internal `ToolCall` types.
+5. Translating tool calls into `domain.ToolCall` types.
 6. Handling HTTP errors and mapping them to typed errors.
 7. Respecting `context.Context` for cancellation and timeouts.
 
@@ -170,8 +182,8 @@ type FakeProvider struct {
     Err       error
 }
 
-func (f *FakeProvider) Generate(ctx context.Context, msgs []Message, tools []ToolDefinition) (*Response, error) { ... }
-func (f *FakeProvider) Stream(ctx context.Context, msgs []Message, tools []ToolDefinition) (<-chan StreamEvent, error) { ... }
+func (f *FakeProvider) Generate(ctx context.Context, msgs []domain.Message, tools []domain.ToolDefinition) (*Response, error) { ... }
+func (f *FakeProvider) Stream(ctx context.Context, msgs []domain.Message, tools []domain.ToolDefinition) (<-chan StreamEvent, error) { ... }
 ```
 
 ## Testing (Issue 10)

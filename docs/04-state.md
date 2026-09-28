@@ -7,7 +7,9 @@
 `internal/state` stores what the agent knows across turns: the current
 conversation, the session it belongs to, and enough history to resume or reason
 about prior context. It is pure data + in-memory logic; it knows nothing about
-models, tools, the UI, or the filesystem beyond its own persistence file.
+models, tools, the UI, or the filesystem beyond its own persistence file. Its
+only internal dependency is `internal/domain`, which owns the shared message
+types.
 
 Issue 10 proposed a package named `internal/session`; the scaffold named the
 package `internal/state` because it hosts session *and* conversation *and*
@@ -26,18 +28,19 @@ internal/state/
 
 ### Conversation
 
-An ordered list of provider-independent messages (same `Role`/`Message` shapes
-used by `internal/agent` and `internal/model`). The agent loop appends user
-messages, assistant messages, and tool results here as a turn progresses.
+An ordered list of `domain.Message` values (the provider-independent type from
+`internal/domain`, shared with `internal/agent` and `internal/model`). The agent
+loop appends user messages, assistant messages, and tool results here as a turn
+progresses.
 
 ```go
 type Conversation struct {
-    messages []Message
+    messages []domain.Message
     limit    int // size guard
 }
 
-func (c *Conversation) Add(m Message) error // error when over limit
-func (c *Conversation) Messages() []Message
+func (c *Conversation) Add(m domain.Message) error // error when over limit
+func (c *Conversation) Messages() []domain.Message
 func (c *Conversation) Clear()
 ```
 
@@ -51,26 +54,37 @@ conversation during the process lifetime") and can be cleared.
 type Session struct {
     ID           string
     StartedAt    time.Time
+    UpdatedAt    time.Time
     WorkspaceDir string
-    conversation *Conversation
+    Conversation *Conversation
 }
 
-func (s *Session) AddMessage(m Message) error
-func (s *Session) Messages() []Message
+func (s *Session) AddMessage(m domain.Message) error
+func (s *Session) Messages() []domain.Message
 func (s *Session) Clear()
 ```
 
-### History
+### Store
 
-Persisted record of past sessions so a user can resume or the agent can recall
-project context across runs.
+Persistence port for sessions, so the agent and TUI depend on an interface
+rather than a concrete on-disk implementation. Implementations contain
+conversation data only — never credentials or API keys.
 
 ```go
-type History struct { ... }
+type SessionMeta struct {
+    ID           string
+    StartedAt    time.Time
+    UpdatedAt    time.Time
+    WorkspaceDir string
+    MessageCount int
+}
 
-func (h *History) Save(s *Session) error
-func (h *History) Load(id string) (*Session, error)
-func (h *History) List() ([]SessionMeta, error)
+type Store interface {
+    Save(s *Session) error
+    Load(id string) (*Session, error)
+    List() ([]SessionMeta, error)
+    Delete(id string) error
+}
 ```
 
 ## Persistence

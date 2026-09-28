@@ -78,7 +78,7 @@ by `agent`, `model`, `state`, and `tools`:
 
 - `domain.Role` — `RoleSystem`, `RoleUser`, `RoleAssistant`, `RoleTool`
 - `domain.Message{Role, Content, ToolCalls, ToolCallID}`
-- `domain.ToolCall{ID, Name, Args}`
+- `domain.ToolCall{ID, Name, Arguments}`
 - `domain.ToolDefinition{Name, Description, Params}`
 
 The agent uses these directly rather than defining its own copies, so there is a

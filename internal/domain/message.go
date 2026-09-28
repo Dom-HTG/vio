@@ -27,7 +27,7 @@ type Message struct {
 // ToolCall is a model-requested invocation of a tool. ID correlates the call
 // with the tool-result message that answers it.
 type ToolCall struct {
-	ID   string
-	Name string
-	Args map[string]any
+	ID        string
+	Name      string
+	Arguments map[string]any
 }

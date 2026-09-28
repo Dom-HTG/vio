@@ -34,7 +34,7 @@ type StreamEvent struct {
 // }
 
 type Response struct {
-	Message       domain.Message
+	Text          string
 	ToolCalls     []domain.ToolCall
 	FinishReason  string
 	UsageMetadata any

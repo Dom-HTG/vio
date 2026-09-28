@@ -49,9 +49,9 @@ type Message struct {
 }
 
 type ToolCall struct {
-    ID   string
-    Name string
-    Args map[string]any
+    ID        string
+    Name      string
+    Arguments map[string]any
 }
 
 type ToolDefinition struct {
@@ -65,13 +65,8 @@ type ToolDefinition struct {
 
 ```go
 // internal/model
-type Request struct {
-    Model    string
-    Messages []domain.Message
-}
-
 type Response struct {
-    Message       domain.Message
+    Text          string
     ToolCalls     []domain.ToolCall // tool calls the model requested, if any
     FinishReason  string            // e.g. "stop" | "tool_calls"
     UsageMetadata any               // model.Usage where available

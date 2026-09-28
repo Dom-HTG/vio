@@ -32,6 +32,8 @@ type OpenAICompat struct {
 	client   *http.Client
 }
 
+var _ Provider = (*OpenAICompat)(nil)
+
 func NewOpenAICompat(cfg ModelConfig) (*OpenAICompat, error) {
 	if strings.TrimSpace(cfg.BaseURL) == "" {
 		return nil, fmt.Errorf("%w: base URL is required", ErrConfig)
@@ -246,13 +248,13 @@ func (a *toolCallAccumulator) result() (domain.ToolCall, error) {
 			return domain.ToolCall{}, fmt.Errorf("%w: %s: %v", ErrInvalidToolCall, a.name, err)
 		}
 	}
-	return domain.ToolCall{ID: a.id, Name: a.name, Args: args}, nil
+	return domain.ToolCall{ID: a.id, Name: a.name, Arguments: args}, nil
 }
 
 func toWireMessage(m domain.Message) (wireMessage, error) {
 	wm := wireMessage{Role: string(m.Role), Content: m.Content, ToolCallID: m.ToolCallID}
 	for _, tc := range m.ToolCalls {
-		args := tc.Args
+		args := tc.Arguments
 		if args == nil {
 			args = map[string]any{}
 		}
@@ -298,7 +300,7 @@ func toToolCall(c wireToolCall) (domain.ToolCall, error) {
 			return domain.ToolCall{}, fmt.Errorf("%w: %s: %v", ErrInvalidToolCall, c.Function.Name, err)
 		}
 	}
-	return domain.ToolCall{ID: c.ID, Name: c.Function.Name, Args: args}, nil
+	return domain.ToolCall{ID: c.ID, Name: c.Function.Name, Arguments: args}, nil
 }
 
 type wireMessage struct {
@@ -343,11 +345,7 @@ type chatChoice struct {
 func (r chatResponse) toResponse() (*Response, error) {
 	choice := r.Choices[0]
 	out := &Response{
-		Message: domain.Message{
-			Role:       domain.RoleAssistant,
-			Content:    choice.Message.Content,
-			ToolCallID: choice.Message.ToolCallID,
-		},
+		Text:          choice.Message.Content,
 		FinishReason:  choice.FinishReason,
 		UsageMetadata: r.Usage,
 	}
@@ -357,7 +355,6 @@ func (r chatResponse) toResponse() (*Response, error) {
 			return nil, err
 		}
 		out.ToolCalls = append(out.ToolCalls, call)
-		out.Message.ToolCalls = append(out.Message.ToolCalls, call)
 	}
 	return out, nil
 }

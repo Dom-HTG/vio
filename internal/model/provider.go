@@ -1,40 +1,47 @@
 package model
 
-import "context"
+import (
+	"context"
 
-// every model implements the provider interface.
-type Provider interface {
-	Chat(ctx context.Context, request Request) (Response, error)
-}
-
-type Role string
-
-const (
-	RoleSystem    Role = "system"
-	RoleUser      Role = "user"
-	RoleAssistant Role = "assistant"
-	RoleTool      Role = "tool"
+	"vio/internal/domain"
 )
 
-type Message struct {
-	Role       Role
-	Content    string
-	ToolCalls  []ToolCall
-	ToolCallID string
+type Provider interface {
+	Generate(ctx context.Context, msgs []domain.Message, tools []domain.ToolDefinition) (*Response, error)
+	Stream(ctx context.Context, msgs []domain.Message, tools []domain.ToolDefinition) (<-chan StreamEvent, error)
 }
 
-type ToolCall struct {
-	Name string
-	Args map[string]any
+// StreamEventType is implemented for the provider-specific events.
+type StreamEventType string
+
+const (
+	StreamToken    StreamEventType = "token"           // Text carries a text delta
+	StreamToolCall StreamEventType = "tool_call_delta" // ToolCall carries a partial call
+	StreamDone     StreamEventType = "done"            // completion
+	StreamError    StreamEventType = "error"           // Error carries the failure
+)
+
+type StreamEvent struct {
+	Type     StreamEventType
+	Text     string
+	ToolCall *domain.ToolCall
+	Error    error
 }
 
-type Request struct {
-	Model    string
-	Messages []Message
-}
+// type Request struct {
+// 	Model    string
+// 	Messages []domain.Message
+// }
 
 type Response struct {
-	Message       Message
-	ToolCall      *ToolCall // optional tool call request from the model
+	Text          string
+	ToolCalls     []domain.ToolCall
+	FinishReason  string
 	UsageMetadata any
+}
+
+type Usage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
 }

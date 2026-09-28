@@ -73,31 +73,17 @@ Done   For each tool call:
 
 ## Agent Types
 
-Core types (provider-independent; shared conceptually with `internal/model`):
+The core message and tool types are defined once in `internal/domain` and shared
+by `agent`, `model`, `state`, and `tools`:
 
-```go
-type Role string
+- `domain.Role` — `RoleSystem`, `RoleUser`, `RoleAssistant`, `RoleTool`
+- `domain.Message{Role, Content, ToolCalls, ToolCallID}`
+- `domain.ToolCall{ID, Name, Arguments}`
+- `domain.ToolDefinition{Name, Description, Params}`
 
-const (
-    RoleSystem    Role = "system"
-    RoleUser      Role = "user"
-    RoleAssistant Role = "assistant"
-    RoleTool      Role = "tool"
-)
-
-type ToolCall struct {
-    ID        string
-    Name      string
-    Arguments map[string]any
-}
-
-type Message struct {
-    Role       Role
-    Content    string
-    ToolCalls  []ToolCall
-    ToolCallID string
-}
-```
+The agent uses these directly rather than defining its own copies, so there is a
+single source of truth across the runtime. (Events are separate and live in
+`internal/app`, with the runtime owning their channel.)
 
 The agent entrypoint used by the TUI (Issue 2's `Runner`):
 

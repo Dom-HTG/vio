@@ -17,14 +17,6 @@ type ToolSchema struct {
 	Params      map[string]any // JSON Schema object
 }
 
-// ToolDefinition is a copy of the Tool object shape implemented specifically ,
-// for the purpose of exposing metadata about the tool to the abstracted provider.
-type ToolDefinition struct {
-	Name        string
-	Description string
-	Params      map[string]any // JSON Schema object
-}
-
 type ToolInput struct {
 	Args map[string]any
 }

@@ -1,6 +1,9 @@
 package tools
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
 
 type Tool interface {
 	Name() string
@@ -9,12 +12,10 @@ type Tool interface {
 	Execute(context.Context, ToolInput) (ToolOutput, error)
 }
 
-// JSON-Schema object for the tool's input parameters.
-// The schema is used to validate the input arguments before executing the tool.
 type ToolSchema struct {
 	Name        string
 	Description string
-	Params      map[string]any // JSON Schema object
+	Params      map[string]any
 }
 
 type ToolInput struct {
@@ -24,5 +25,32 @@ type ToolInput struct {
 type ToolOutput struct {
 	Output  string
 	IsError bool
-	Data    map[string]any // optional structured payload for the UI
+	Data    map[string]any
+}
+
+func failure(format string, args ...any) ToolOutput {
+	return ToolOutput{Output: fmt.Sprintf(format, args...), IsError: true}
+}
+
+func argString(in ToolInput, name string) (string, bool) {
+	s, ok := in.Args[name].(string)
+	return s, ok
+}
+
+func argBool(in ToolInput, name string) (bool, bool) {
+	b, ok := in.Args[name].(bool)
+	return b, ok
+}
+
+func argNumber(in ToolInput, name string) (float64, bool) {
+	switch v := in.Args[name].(type) {
+	case float64:
+		return v, true
+	case int:
+		return float64(v), true
+	case int64:
+		return float64(v), true
+	default:
+		return 0, false
+	}
 }

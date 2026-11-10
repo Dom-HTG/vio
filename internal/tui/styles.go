@@ -73,11 +73,12 @@ var (
 	dimColor  = gloss.Color("#6B7280")
 	textColor = gloss.Color("#E5E7EB")
 
-	userLabelStyle = gloss.NewStyle().Bold(true).Foreground(accent)
-	assistantStyle = gloss.NewStyle().Foreground(textColor)
-	toolStyle      = gloss.NewStyle().Faint(true).Foreground(toolColor)
-	errorStyle     = gloss.NewStyle().Foreground(errorClr)
-	infoStyle      = gloss.NewStyle().Faint(true).Foreground(dimColor)
+	userLabelStyle  = gloss.NewStyle().Bold(true).Foreground(accent)
+	assistantStyle  = gloss.NewStyle().Foreground(textColor)
+	toolStyle       = gloss.NewStyle().Faint(true).Foreground(toolColor)
+	toolResultStyle = gloss.NewStyle().Foreground(dimColor)
+	errorStyle      = gloss.NewStyle().Foreground(errorClr)
+	infoStyle       = gloss.NewStyle().Faint(true).Foreground(dimColor)
 
 	userBoxStyle = gloss.NewStyle().
 			Border(gloss.RoundedBorder()).
@@ -110,8 +111,9 @@ var (
 	metaKeyStyle   = gloss.NewStyle().Faint(true).Foreground(dimColor)
 	metaValueStyle = gloss.NewStyle().Foreground(textColor)
 
-	idleDot = gloss.NewStyle().Foreground(dimColor).Render("●")
-	busyDot = gloss.NewStyle().Foreground(accent).Render("●")
+	idleDot  = gloss.NewStyle().Foreground(dimColor).Render("●")
+	busyDot  = gloss.NewStyle().Foreground(accent).Render("●")
+	errorDot = gloss.NewStyle().Foreground(errorClr).Render("●")
 
 	inputBoxStyle = gloss.NewStyle().
 			Border(gloss.RoundedBorder()).
@@ -128,7 +130,7 @@ func welcomeView(width int) string {
 		infoStyle.Render("Build and ship production-grade software from the terminal."),
 		"",
 		infoStyle.Render("type a task and press enter to begin"),
-		infoStyle.Render("ctrl+c to quit  ·  ctrl+l to clear"),
+		infoStyle.Render("ctrl+c to cancel or quit  ·  ctrl+l to clear"),
 	}
 	return gloss.NewStyle().Width(width).Render(strings.Join(lines, "\n"))
 }

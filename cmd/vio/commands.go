@@ -13,4 +13,4 @@ func SpawnAgentCmd() *cobra.Command {
 
 func SpawnAgent(cmd *cobra.Command, args []string) {
 	// spawn a new terminal session and start the agent here.
-} 
+}

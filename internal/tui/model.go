@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"context"
+	"errors"
 	"os"
 	"strings"
 
@@ -8,6 +10,22 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	gloss "charm.land/lipgloss/v2"
+
+	"vio/internal/agent"
+	"vio/internal/app"
+)
+
+type uiState int
+
+const (
+	stateIdle uiState = iota
+	stateThinking
+	stateStreaming
+	stateExecuting
+	stateWaiting
+	stateError
+	stateCompleted
+	stateCancelled
 )
 
 type model struct {
@@ -20,12 +38,20 @@ type model struct {
 
 	messages []Message
 	busy     bool
+	state    uiState
+	runner   agent.AgentRunner
+
+	events          <-chan app.Event
+	cancel          context.CancelFunc
+	cancelRequested bool
+	assistantOpen   bool
+	toolResultIndex int
 
 	modelName string
 	cwd       string
 }
 
-func NewModel() *model {
+func NewModel(runner agent.AgentRunner) *model {
 	vp := viewport.New()
 	vp.SoftWrap = true
 
@@ -39,10 +65,12 @@ func NewModel() *model {
 	}
 
 	return &model{
-		input:     newInput(),
-		viewport:  vp,
-		modelName: modelName,
-		cwd:       cwd,
+		input:           newInput(),
+		viewport:        vp,
+		modelName:       modelName,
+		cwd:             cwd,
+		runner:          runner,
+		toolResultIndex: -1,
 	}
 }
 
@@ -71,15 +99,14 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewport, cmd = m.viewport.Update(msg)
 		return m, cmd
 
-	case tokenMsg:
-		if n := len(m.messages); n > 0 && m.messages[n-1].Role == RoleAssistant {
-			m.messages[n-1].Content += string(msg)
-			m.refreshViewport()
-		}
-		return m, nil
+	case eventMsg:
+		return m, m.handleEvent(msg.Event)
 
 	case streamDoneMsg:
-		m.busy = false
+		if m.busy {
+			m.appendStreamClosed()
+			m.finishTurn()
+		}
 		return m, nil
 	}
 
@@ -89,14 +116,28 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 	switch msg.String() {
 	case "ctrl+c":
+		if m.busy {
+			m.cancelRequested = true
+			m.state = stateCancelled
+			if m.cancel != nil {
+				m.cancel()
+			}
+			return nil
+		}
 		return tea.Quit
+
 	case "ctrl+l":
 		m.messages = nil
+		if !m.busy {
+			m.state = stateIdle
+		}
 		m.refreshViewport()
 		return nil
+
 	case "pgup":
 		m.viewport.PageUp()
 		return nil
+
 	case "pgdown":
 		m.viewport.PageDown()
 		return nil
@@ -111,23 +152,150 @@ func (m *model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 	return cmd
 }
 
-// submit appends the typed prompt, seeds an assistant placeholder, and starts
-// the (currently placeholder) agent turn.
 func (m *model) submit() tea.Cmd {
 	text := strings.TrimSpace(m.input.Value())
 	if text == "" || m.busy {
 		return nil
 	}
-	m.input.Reset()
+	if m.runner == nil {
+		m.messages = append(m.messages, Message{Role: RoleError, Content: "agent is not configured"})
+		m.state = stateError
+		m.refreshViewport()
+		return nil
+	}
 
-	m.messages = append(m.messages,
-		Message{Role: RoleUser, Content: text},
-		Message{Role: RoleAssistant},
-	)
+	m.input.Reset()
+	m.messages = append(m.messages, Message{Role: RoleUser, Content: text})
 	m.busy = true
+	m.state = stateThinking
+	m.cancelRequested = false
+	m.assistantOpen = false
+	m.toolResultIndex = -1
 	m.refreshViewport()
 
-	return runPrompt(text)
+	ctx, cancel := context.WithCancel(context.Background())
+	m.cancel = cancel
+	m.events = m.runner.Run(ctx, text)
+	return waitForEvent(m.events)
+}
+
+func (m *model) handleEvent(event app.Event) tea.Cmd {
+	terminal := false
+
+	switch event.Type {
+	case app.EventAgentStarted:
+		m.state = stateThinking
+
+	case app.EventModelStarted:
+		m.state = stateThinking
+		m.assistantOpen = false
+
+	case app.EventModelOutput:
+		data, ok := event.Data.(app.ModelOutput)
+		if ok && data.Text != "" {
+			if !m.assistantOpen {
+				m.messages = append(m.messages, Message{Role: RoleAssistant})
+				m.assistantOpen = true
+			}
+			m.messages[len(m.messages)-1].Content += data.Text
+			m.state = stateStreaming
+			m.refreshViewport()
+		}
+
+	case app.EventToolStarted:
+		data, ok := event.Data.(app.ToolStarted)
+		if ok {
+			m.messages = append(m.messages, Message{Role: RoleTool, Content: formatToolCall(data)})
+			m.toolResultIndex = -1
+			m.assistantOpen = false
+			m.state = stateExecuting
+			m.refreshViewport()
+		}
+
+	case app.EventToolOutput:
+		data, ok := event.Data.(app.ToolOutput)
+		if ok {
+			m.messages = append(m.messages, Message{Role: RoleToolResult, Content: truncateOutput(data.Text)})
+			m.toolResultIndex = len(m.messages) - 1
+			m.refreshViewport()
+		}
+
+	case app.EventToolFinished:
+		data, ok := event.Data.(app.ToolFinished)
+		if ok && !data.Ok && m.toolResultIndex >= 0 && m.toolResultIndex < len(m.messages) {
+			m.messages[m.toolResultIndex].Role = RoleError
+			m.refreshViewport()
+		}
+		m.toolResultIndex = -1
+
+	case app.EventAgentFinished:
+		data, _ := event.Data.(app.AgentFinished)
+		m.finalizeAssistant(data.Text)
+		m.state = stateCompleted
+		terminal = true
+
+	case app.EventError:
+		data, _ := event.Data.(app.AgentError)
+		m.appendError(data.Err)
+		terminal = true
+	}
+
+	if terminal {
+		m.refreshViewport()
+		m.finishTurn()
+		return nil
+	}
+	if m.events != nil {
+		return waitForEvent(m.events)
+	}
+	return nil
+}
+
+func (m *model) finalizeAssistant(text string) {
+	if text == "" {
+		return
+	}
+	if n := len(m.messages); n > 0 && m.messages[n-1].Role == RoleAssistant {
+		m.messages[n-1].Content = text
+		return
+	}
+	m.messages = append(m.messages, Message{Role: RoleAssistant, Content: text})
+}
+
+func (m *model) appendError(err error) {
+	if m.cancelRequested || errors.Is(err, context.Canceled) {
+		m.messages = append(m.messages, Message{Role: RoleInfo, Content: "cancelled"})
+		m.state = stateCancelled
+		return
+	}
+	if err == nil {
+		err = errors.New("unknown agent error")
+	}
+	m.messages = append(m.messages, Message{Role: RoleError, Content: err.Error()})
+	m.state = stateError
+}
+
+func (m *model) appendStreamClosed() {
+	if m.cancelRequested {
+		m.messages = append(m.messages, Message{Role: RoleInfo, Content: "cancelled"})
+		m.state = stateCancelled
+	} else {
+		m.messages = append(m.messages, Message{Role: RoleError, Content: "agent stream closed unexpectedly"})
+		m.state = stateError
+	}
+	m.refreshViewport()
+}
+
+func (m *model) finishTurn() {
+	m.busy = false
+	m.events = nil
+	m.cancelRequested = false
+	m.assistantOpen = false
+	m.toolResultIndex = -1
+	if m.cancel != nil {
+		m.cancel()
+		m.cancel = nil
+	}
 }
 
 // resize recomputes layout for the current terminal size.
@@ -186,8 +354,21 @@ func (m *model) headerView() string {
 // metaColumn renders the header's metadata lines.
 func (m *model) metaColumn() string {
 	dot, status := idleDot, "idle"
-	if m.busy {
+	switch m.state {
+	case stateThinking:
 		dot, status = busyDot, "thinking"
+	case stateStreaming:
+		dot, status = busyDot, "streaming"
+	case stateExecuting:
+		dot, status = busyDot, "executing tool"
+	case stateWaiting:
+		dot, status = busyDot, "waiting"
+	case stateError:
+		dot, status = errorDot, "error"
+	case stateCompleted:
+		dot, status = idleDot, "completed"
+	case stateCancelled:
+		dot, status = idleDot, "cancelled"
 	}
 
 	rows := []string{

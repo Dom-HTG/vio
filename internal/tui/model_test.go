@@ -14,7 +14,7 @@ func typeString(t *testing.T, m *model, s string) {
 }
 
 func TestSubmitAndStream(t *testing.T) {
-	m := NewModel()
+	m := NewModel(nil)
 	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 
 	typeString(t, m, "hello")
@@ -55,7 +55,7 @@ func TestSubmitAndStream(t *testing.T) {
 }
 
 func TestClearAndEmptySubmit(t *testing.T) {
-	m := NewModel()
+	m := NewModel(nil)
 	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 
 	if _, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd != nil {

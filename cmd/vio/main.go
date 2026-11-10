@@ -9,9 +9,13 @@ import (
 )
 
 func main() {
-    newModel := tui.NewModel()
-    program := tea.NewProgram(newModel)
-    if _, err := program.Run(); err != nil {
-        log.Fatal(err)
-    }
+	s, err := newStack()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	program := tea.NewProgram(tui.NewModel(s.Agent))
+	if _, err := program.Run(); err != nil {
+		log.Fatal(err)
+	}
 }

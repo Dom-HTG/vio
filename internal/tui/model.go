@@ -8,6 +8,8 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	gloss "charm.land/lipgloss/v2"
+
+	"vio/internal/agent"
 )
 
 type model struct {
@@ -20,12 +22,13 @@ type model struct {
 
 	messages []Message
 	busy     bool
+	runner   agent.AgentRunner
 
 	modelName string
 	cwd       string
 }
 
-func NewModel() *model {
+func NewModel(runner agent.AgentRunner) *model {
 	vp := viewport.New()
 	vp.SoftWrap = true
 
@@ -43,6 +46,7 @@ func NewModel() *model {
 		viewport:  vp,
 		modelName: modelName,
 		cwd:       cwd,
+		runner:    runner,
 	}
 }
 

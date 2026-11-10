@@ -33,6 +33,9 @@ func (m *model) renderMessage(msg Message) string {
 	case RoleTool:
 		return toolStyle.Render("  ● " + msg.Content)
 
+	case RoleToolResult:
+		return toolResultStyle.Render(indentBlock(msg.Content, "    "))
+
 	case RoleError:
 		return errorStyle.Render("  ✗ " + msg.Content)
 

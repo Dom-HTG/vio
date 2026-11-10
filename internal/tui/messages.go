@@ -1,9 +1,9 @@
 package tui
 
 import (
-	"time"
-
 	tea "charm.land/bubbletea/v2"
+
+	"vio/internal/app"
 )
 
 // Role describes what kind of transcript entry a Message is.
@@ -13,6 +13,7 @@ const (
 	RoleUser Role = iota
 	RoleAssistant
 	RoleTool
+	RoleToolResult
 	RoleError
 	RoleInfo
 )
@@ -23,16 +24,21 @@ type Message struct {
 	Content string
 }
 
-// tokenMsg is an internal event carrying one chunk of streamed assistant text.
-// It is the TUI-side equivalent of an agent EventModelToken delta.
-type tokenMsg string
+// eventMsg carries one agent event into the Bubble Tea update loop.
+type eventMsg struct {
+	Event app.Event
+}
 
-// streamDoneMsg signals the end of the current assistant stream.
+// streamDoneMsg signals that the agent's event channel closed.
 type streamDoneMsg struct{}
 
-// newTokenCmd returns a tea.Cmd that fires after d, delivering one token.
-func newTokenCmd(token string, d time.Duration) tea.Cmd {
-	return tea.Tick(d, func(time.Time) tea.Msg {
-		return tokenMsg(token)
-	})
+// waitForEvent blocks until the next agent event or the stream closes.
+func waitForEvent(events <-chan app.Event) tea.Cmd {
+	return func() tea.Msg {
+		event, ok := <-events
+		if !ok {
+			return streamDoneMsg{}
+		}
+		return eventMsg{Event: event}
+	}
 }

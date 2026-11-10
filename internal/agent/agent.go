@@ -2,28 +2,25 @@ package agent
 
 import (
 	"context"
+
 	"vio/internal/app"
 	"vio/internal/model"
 	"vio/internal/state"
 	"vio/internal/tools"
 )
 
-//  the terminal UI communicates directly with the runtime package via agent-events.
-// the runtime package is responsible for managing the lifecycle of the agent, including starting and stopping the agent, handling events, and managing the state of the agent.\
-// the runtime package depends on the model provider, tools, workspace context & state.
-// agent core loop: User prompt -> build context -> send message to model -> model responds -> use tool if need be -> verify output -> repeat until task is complete -> return response to terminal UI.
+const defaultMaxIterations = 16
 
-// the TUI depends on AgentRunner. It is responsible for starting a turn and returns the event stream for that turn.
+// AgentRunner is the contract the TUI depends on.
 type AgentRunner interface {
-	Run(prompt string, ctx context.Context) <-chan app.Event
+	Run(ctx context.Context, prompt string) <-chan app.Event
 }
 
-// agent's dependencies are injected via the config object.
-// agentconfig is never constructed internally, only injected.
 type AgentConfig struct {
 	Provider      model.Provider
 	Tools         *tools.Registry
 	Session       *state.Session
+	Model         string
 	MaxIterations int
 }
 
@@ -31,27 +28,44 @@ type Agent struct {
 	provider      model.Provider
 	tools         *tools.Registry
 	session       *state.Session
+	model         string
 	maxIterations int
 }
 
 func NewAgent(config AgentConfig) *Agent {
+	if config.MaxIterations <= 0 {
+		config.MaxIterations = defaultMaxIterations
+	}
+	if config.Session == nil {
+		config.Session = &state.Session{}
+	}
+	if config.Session.Conversation == nil {
+		config.Session.Conversation = &state.Conversation{}
+	}
+
 	return &Agent{
 		provider:      config.Provider,
 		tools:         config.Tools,
 		session:       config.Session,
+		model:         config.Model,
 		maxIterations: config.MaxIterations,
 	}
 }
 
-func (a *Agent) Run(prompt string, ctx context.Context) <-chan app.Event {
+// Run starts one turn and returns its event stream. The agent owns the channel
+// and closes it when the turn ends.
+func (a *Agent) Run(ctx context.Context, prompt string) <-chan app.Event {
 	events := make(chan app.Event)
 	go func() {
-		defer close(events) // agent creates and closes the channel
-		//append prompt to the session conversation
-		//build context for the model
-		//call provider.Chat with the context and prompt
-		//execute any tool calls if needed via the tools registry
-		//append the results, repeat until done or max iterations reached
+		defer close(events)
+		a.loop(ctx, prompt, func(event app.Event) bool {
+			select {
+			case events <- event:
+				return true
+			case <-ctx.Done():
+				return false
+			}
+		})
 	}()
 	return events
 }
